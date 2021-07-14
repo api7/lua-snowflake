@@ -29,13 +29,14 @@ where default
 * `n` is a 5-bit integer representing the node within a given data center
 * `d` is a 5-bit integer representing a unique data center or group of servers
 * `t` is a 42-bit integer representing the current timestamp in milliseconds
-    * the number of milliseconds to have elapsed since 1609459200000 or 2021-01-01T00:00:00.000Z
+    * the number of milliseconds to have elapsed since 1413817200000 or 2014-10-20T15:00:00.000Z
 
-`sf.init(datacenter_id, node_id, snowflake_epoc, node_id_bits, datacenter_id_bits, sequence_bits)` is used to initialize snowflake and set values for ddddd and nnnnn as follows:
+`sf.init(datacenter_id, node_id, snowflake_epoc, node_id_bits, datacenter_id_bits, sequence_bits, delta_offset)` is used to initialize snowflake and set values for ddddd and nnnnn as follows:
 
-* `datacenter_id` is an integer n, where 0 ≤ n < (1 << datacenter_id_bits) and specifies the `ddddd` portion of the id
-* `node_id` is an integer n, where 0 ≤ n < (1 << node_id_bits) and specifies the `nnnnn` portion of the id
-* `snowflake_epoc` is an integer n, the starting timestamp is expressed in milliseconds
-* `node_id_bits` is an integer n, representing the node within a given data center
-* `datacenter_id_bits` is an integer n, representing a unique data center or group of servers
-* `sequence_bits` is an integer n, called multiple times for the same millisecond
+* `datacenter_id` is an integer `d`, where 0 ≤ d < (1 << datacenter_id_bits) and specifies the `ddddd` portion of the id.
+* `node_id` is an integer `n`, where 0 ≤ n < (1 << node_id_bits) and specifies the `nnnnn` portion of the id.
+* `snowflake_epoc` the start timestamp is expressed in milliseconds, the part beyond delta_offset will be ignored.
+* `node_id_bits` is an integer representing the number of bits occupied by a node in a given data center.
+* `datacenter_id_bits` is an integer representing the number of bits occupied by a unique data center or a group of servers
+* `sequence_bits` is an integer, the number of bits occupied by the number of calls in the same millisecond.
+* `delta_offset` timestamp delta offset (unit: milliseconds) [`delta_offset=1` 1 millisecond, `delta_offset=10` 10 milliseconds, `delta_offset=100` 100 milliseconds, `delta_offset=1000` 1 second`]

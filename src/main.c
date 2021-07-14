@@ -2,6 +2,8 @@
 #include <lauxlib.h>
 #include <stdbool.h>
 #include <sys/time.h>
+#include <math.h>
+#include <stdlib.h>
 
 #if LUA_VERSION_NUM < 502
 #define luaL_newlib(L, l) (lua_newtable(L), luaL_register(L, NULL, l))
@@ -14,12 +16,13 @@ static int g_node_id = 0;
 static long g_last_timestamp = -1;
 static int g_sequence = 0;
 
-// 2021-01-01T00:00:00Z
-#define SNOWFLAKE_EPOC 1609459200000L
+// 2014-10-20T15:00:00.000Z
+#define SNOWFLAKE_EPOC 1413817200000L
 
 #define NODE_ID_BITS 5
 #define DATACENTER_ID_BITS 5
 #define SEQUENCE_BITS 12
+#define DELTA_OFFSET 1
 
 struct conf {
     long snowflake_epoc;
@@ -30,12 +33,23 @@ struct conf {
     int datacenter_id_shift;
     int timestamp_shift;
     int sequence_mask;
+    int delta_offset;
 } conf;
 
 static long get_timestamp() {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-
+    switch (conf.delta_offset)
+    {
+    case 1000:
+        return tv.tv_sec;
+    case 100:
+        return tv.tv_sec * 10 + tv.tv_usec / 100000;
+    case 10:
+        return tv.tv_sec * 100 + tv.tv_usec / 10000;
+    case 1:
+        return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    }
     return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
@@ -73,10 +87,19 @@ static int luasnowflake_init(lua_State *L) {
         return luaL_error(L, "sequence_bits must be an integer n where ≥ 1");
     }
 
-    // The timestamp >= 32 is because it is in milliseconds and only lasts 49 days when it equals 32 bits
-    if ((conf.node_id_bits + conf.datacenter_id_bits + conf.sequence_bits) > 32) {
-        return luaL_error(L, "(node_id_bits + datacenter_id_bits + sequence_bits) cannot be > 32");
+    conf.delta_offset = luaL_optint(L, 7, DELTA_OFFSET);
+    switch (conf.delta_offset)
+    {
+    case 1000:
+    case 100:
+    case 10:
+    case 1:
+        break;
+    default:
+        return luaL_error(L, "does not support delta_offset: %d", conf.delta_offset);
     }
+
+    conf.snowflake_epoc = conf.snowflake_epoc / conf.delta_offset;
 
     g_datacenter_id = luaL_checkint(L, 1);
     int max_datacenter_id_bits = (1 << conf.datacenter_id_bits) - 1;
@@ -129,9 +152,31 @@ static int luasnowflake_next_id(lua_State *L) {
     return 1;
 }
 
+static int bit_split(lua_State *L) {
+    const char* snow_id_str = luaL_checkstring(L, 1);
+    long int snow_id = atol(snow_id_str);
+    long sequence = snow_id & ((long)1 << conf.sequence_bits) - 1;
+    long data_machine_and = ((long)1 << (conf.node_id_bits + conf.datacenter_id_bits)) - 1;
+    long data_machine_id = (snow_id >> conf.sequence_bits) & data_machine_and;
+    int max = conf.sequence_bits + conf.node_id_bits + conf.datacenter_id_bits;
+    long delta_offset_and = ((long)1 << (64 - max)) - 1;
+    long delta_offset = (snow_id >> max) & delta_offset_and;
+    char buffer[32];
+    snprintf(buffer, 32, "%ld, %ld, %ld", data_machine_id, delta_offset, sequence);
+    lua_pushstring(L, buffer);
+    return 1;
+}
+
+static int getmillisecond(lua_State *L) {
+    lua_pushnumber(L, get_timestamp());
+    return 1;
+}
+
 static const struct luaL_Reg luasnowflake_lib[] = {
     {"init", luasnowflake_init},
     {"next_id", luasnowflake_next_id},
+    {"getmillisecond", getmillisecond},
+    {"bit_split", bit_split},
     {NULL, NULL},
 };
 
